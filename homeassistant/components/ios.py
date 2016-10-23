@@ -266,13 +266,13 @@ def setup(hass, config):
 
     discovery.load_platform(hass, "sensor", DOMAIN, {}, config)
 
-    hass.wsgi.register_view(iOSIdentifyDeviceView(hass))
+    hass.http.register_view(iOSIdentifyDeviceView(hass))
 
     if config.get(DOMAIN) is not None:
         app_config = config[DOMAIN]
         if app_config.get(CONF_PUSH) is not None:
             push_config = app_config[CONF_PUSH]
-            hass.wsgi.register_view(iOSPushConfigView(hass, push_config))
+            hass.http.register_view(iOSPushConfigView(hass, push_config))
 
     return True
 
