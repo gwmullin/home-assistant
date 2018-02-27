@@ -59,6 +59,7 @@ DEFAULT_RETAIN = False
 DEFAULT_PROTOCOL = PROTOCOL_311
 
 ATTR_TOPIC = 'topic'
+ATTR_TOPIC_TEMPLATE = 'topic_template'
 ATTR_PAYLOAD = 'payload'
 ATTR_PAYLOAD_TEMPLATE = 'payload_template'
 ATTR_QOS = CONF_QOS
@@ -129,7 +130,8 @@ MQTT_RW_PLATFORM_SCHEMA = MQTT_BASE_PLATFORM_SCHEMA.extend({
 
 # Service call validation schema
 MQTT_PUBLISH_SCHEMA = vol.Schema({
-    vol.Required(ATTR_TOPIC): valid_publish_topic,
+    vol.Exclusive(ATTR_TOPIC, 'topic'): valid_publish_topic,
+    vol.Exclusive(ATTR_TOPIC_TEMPLATE, 'topic'): cv.string,
     vol.Exclusive(ATTR_PAYLOAD, 'payload'): object,
     vol.Exclusive(ATTR_PAYLOAD_TEMPLATE, 'payload'): cv.string,
     vol.Required(ATTR_QOS, default=DEFAULT_QOS): _VALID_QOS_SCHEMA,
@@ -137,9 +139,9 @@ MQTT_PUBLISH_SCHEMA = vol.Schema({
 }, required=True)
 
 
-def _build_publish_data(topic, qos, retain):
+def _build_publish_data(qos, retain):
     """Build the arguments for the publish service without the payload."""
-    data = {ATTR_TOPIC: topic}
+    data = {}
     if qos is not None:
         data[ATTR_QOS] = qos
     if retain is not None:
@@ -149,14 +151,20 @@ def _build_publish_data(topic, qos, retain):
 
 def publish(hass, topic, payload, qos=None, retain=None):
     """Publish message to an MQTT topic."""
-    data = _build_publish_data(topic, qos, retain)
+    data = _build_publish_data(qos, retain)
+    data[ATTR_TOPIC] = topic
     data[ATTR_PAYLOAD] = payload
     hass.services.call(DOMAIN, SERVICE_PUBLISH, data)
 
 
-def publish_template(hass, topic, payload_template, qos=None, retain=None):
+def publish_template(hass, payload_template, topic=None, topic_template=None,
+                     qos=None, retain=None):
     """Publish message to an MQTT topic using a template payload."""
-    data = _build_publish_data(topic, qos, retain)
+    data = _build_publish_data(qos, retain)
+    if topic:
+        data[ATTR_TOPIC] = topic
+    else:
+        data[ATTR_TOPIC_TEMPLATE] = topic_template
     data[ATTR_PAYLOAD_TEMPLATE] = payload_template
     hass.services.call(DOMAIN, SERVICE_PUBLISH, data)
 
@@ -264,11 +272,24 @@ def setup(hass, config):
 
     def publish_service(call):
         """Handle MQTT publish service calls."""
-        msg_topic = call.data[ATTR_TOPIC]
+        msg_topic = call.data.get(ATTR_TOPIC)
+        msg_topic_template = call.data.get(ATTR_TOPIC_TEMPLATE)
         payload = call.data.get(ATTR_PAYLOAD)
         payload_template = call.data.get(ATTR_PAYLOAD_TEMPLATE)
         qos = call.data[ATTR_QOS]
         retain = call.data[ATTR_RETAIN]
+
+        try:
+            if msg_topic_template is not None:
+                msg_topic = template.Template(
+                    msg_topic_template, hass).render()
+        except template.jinja2.TemplateError as exc:
+            _LOGGER.error(
+                "Unable to publish: rendering topic template "
+                "'%s' failed because %s.",
+                msg_topic, exc)
+            return
+
         try:
             if payload_template is not None:
                 payload = template.Template(payload_template, hass).render()

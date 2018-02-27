@@ -6,6 +6,10 @@ publish:
       description: Topic to publish payload
       example: /homeassistant/hello
 
+    topic_template:
+      description: Template to render as topic value. Ignored if topic given.
+      example: "{{ states('sensor.id') }}"
+
     payload:
       description: Payload to publish
       example: This is great
